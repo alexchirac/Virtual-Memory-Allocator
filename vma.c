@@ -8,8 +8,9 @@ list_t*
 dll_create(unsigned int data_size)
 {
 	list_t *list = malloc(sizeof(list_t));
-    list->data_size = data_size;
-    list->size = 0;
+	list->data_size = data_size;
+	list->size = 0;
+	return list;
 }
 
 /*
@@ -22,14 +23,14 @@ dll_create(unsigned int data_size)
  * Atentie: n>=0 (nu trebuie tratat cazul in care n este negativ).
  */
 node*
-dll_get_nth_node(list_t* list, unsigned int n)
+dll_get_nth_node(list_t *list, int n)
 {
 	if (n > list->size)
-        n = n % list->size;
-    node *cur = list->head;
-    for (int i = 0; i < n; i++)
-        cur = cur->next;
-    return cur;
+		n = n % list->size;
+	node *cur = list->head;
+	for (int i = 0; i < n; i++)
+		cur = cur->next;
+	return cur;
 }
 
 /*
@@ -43,24 +44,24 @@ dll_get_nth_node(list_t* list, unsigned int n)
  * Atentie: n>=0 (nu trebuie tratat cazul in care n este negativ).
  */
 void
-dll_add_nth_node(list_t* list, unsigned int n, const void* new_data)
+dll_add_nth_node(list_t *list, int n, const void *new_data)
 {
-	node *Node = malloc(sizeof(node));
-	Node->data = malloc(list->data_size);
-	memcpy(Node->data, new_data, list->data_size);
+	node *new_node = malloc(sizeof(node));
+	new_node->data = malloc(list->data_size);
+	memcpy(new_node->data, new_data, list->data_size);
 	if (list->size == 0) {
-		list->head = Node;
-		Node->next = Node;
-		Node->prev = Node;
+		list->head = new_node;
+		new_node->next = new_node;
+		new_node->prev = new_node;
 		list->size++;
 		return;
 	}
 	if (n == 0) {
-		Node->next = list->head;
-		Node->prev = list->head->prev;
-		list->head->prev->next = Node;
-		list->head->prev = Node;
-		list->head = Node;
+		new_node->next = list->head;
+		new_node->prev = list->head->prev;
+		list->head->prev->next = new_node;
+		list->head->prev = new_node;
+		list->head = new_node;
 		list->size++;
 		return;
 	}
@@ -68,12 +69,11 @@ dll_add_nth_node(list_t* list, unsigned int n, const void* new_data)
 		n = list->size;
 	node *cur;
 	cur = dll_get_nth_node(list, n - 1);
-	
-	
-	Node->next = cur->next;
-	Node->prev = cur;
-	cur->next->prev = Node;
-	cur->next = Node;
+
+	new_node->next = cur->next;
+	new_node->prev = cur;
+	cur->next->prev = new_node;
+	cur->next = new_node;
 	list->size++;
 }
 
@@ -87,7 +87,7 @@ dll_add_nth_node(list_t* list, unsigned int n, const void* new_data)
  * Atentie: n>=0 (nu trebuie tratat cazul in care n este negativ).
  */
 node*
-dll_remove_nth_node(list_t* list, unsigned int n)
+dll_remove_nth_node(list_t *list, int n)
 {
 	node *cur;
 	if (n > list->size - 1)
@@ -108,7 +108,7 @@ dll_remove_nth_node(list_t* list, unsigned int n)
  * sfarsit, elibereaza memoria folosita de structura lista.
  */
 void
-dll_free(list_t** pp_list)
+dll_free(list_t **pp_list)
 {
 	node *cur = (*pp_list)->head->prev;
 	node *aux;
@@ -125,10 +125,10 @@ dll_free(list_t** pp_list)
 
 arena_t *alloc_arena(const uint64_t size)
 {
-    arena_t *arena = malloc(sizeof(arena_t));
-    arena->arena_size = size;
-    arena->alloc_list = dll_create(sizeof(block_t));
-    return arena;
+	arena_t *arena = malloc(sizeof(arena_t));
+	arena->arena_size = size;
+	arena->alloc_list = dll_create(sizeof(block_t));
+	return arena;
 }
 
 /*
@@ -149,8 +149,7 @@ void del_block(block_t *block)
 	list_t *list = ((list_t *)block->miniblock_list);
 	if (list->size != 0) {
 		cur = list->head->prev;
-		while (cur != list->head)
-		{
+		while (cur != list->head) {
 			aux = cur->prev;
 			miniblock_t *miniblock = (miniblock_t *)cur->data;
 			del_miniblock(miniblock);
@@ -189,7 +188,7 @@ void concatenate(node *node1, node *node2)
 	free(block2);
 	node1->next = node2->next;
 	node2->next->prev = node1;
-	free(node2); 
+	free(node2);
 }
 
 /*
@@ -248,6 +247,7 @@ position get_addr_pos(arena_t *arena, uint64_t address)
 	int i;
 	pos.block_pos = -1;
 	pos.miniblock_pos = -1;
+	pos.is_start = 0;
 	if (block_list->size == 0)
 		return pos;
 
@@ -269,8 +269,11 @@ position get_addr_pos(arena_t *arena, uint64_t address)
 	node *cur2 = miniblock_list->head;
 	for (i = 0; i < miniblock_list->size; i++) {
 		miniblock = (miniblock_t *)cur2->data;
-		if (address == miniblock->start_address) {
+		uint64_t addr_fin = miniblock->start_address + miniblock->size;
+		if (address >= miniblock->start_address && address < addr_fin) {
 			pos.miniblock_pos = i;
+			if (address == miniblock->start_address)
+				pos.is_start = 1;
 			return pos;
 		}
 		cur2 = cur2->next;
@@ -285,7 +288,7 @@ void free_middle_miniblock(arena_t *arena, position pos)
 	node *cur1 = dll_get_nth_node(block_list, pos.block_pos);
 	block_t *block = (block_t *)cur1->data;
 	list_t *miniblock_list = (list_t *)block->miniblock_list;
-	node *cur2 =dll_get_nth_node(miniblock_list, pos.miniblock_pos);
+	node *cur2 = dll_get_nth_node(miniblock_list, pos.miniblock_pos);
 
 	uint64_t block2_size = 0;
 	uint64_t block2_start_adress;
@@ -323,13 +326,15 @@ void free_middle_miniblock(arena_t *arena, position pos)
 void free_block(arena_t *arena, const uint64_t address)
 {
 	position pos = get_addr_pos(arena, address);
-	if (pos.miniblock_pos == -1)
+	if (pos.is_start == 0) {
+		printf("Invalid address for free.\n");
 		return;
+	}
 	list_t *block_list = arena->alloc_list;
 	node *cur1 = dll_get_nth_node(block_list, pos.block_pos);
 	block_t *block = (block_t *)cur1->data;
 	list_t *miniblock_list = (list_t *)block->miniblock_list;
-	node *cur2 =dll_get_nth_node(miniblock_list, pos.miniblock_pos);
+	node *cur2 = dll_get_nth_node(miniblock_list, pos.miniblock_pos);
 	if (miniblock_list->size == 1) {
 		del_block(block);
 		cur1 = dll_remove_nth_node(block_list, pos.block_pos);
@@ -355,7 +360,6 @@ void free_block(arena_t *arena, const uint64_t address)
 		return;
 	}
 	free_middle_miniblock(arena, pos);
-
 }
 
 /*
@@ -379,7 +383,7 @@ miniblock_t *make_miniblock(uint64_t address, size_t size)
 	miniblock->start_address = address;
 	miniblock->size = size;
 	miniblock->perm = 6;
-	miniblock->rw_buffer = malloc(size);
+	miniblock->rw_buffer = malloc(1);
 	return miniblock;
 }
 
@@ -431,18 +435,25 @@ int get_poz(arena_t *arena, uint64_t address, uint64_t size)
 			block2 = (block_t *)cur->next->data;
 			if (addr_fin1 <= address && addr_fin <= block2->start_address)
 				return n;
+			cur = cur->next;
 			n++;
 		}
 	} while (n <= list->size);
-	if (n > list->size)
-		return -1;
+	// if (n > list->size)
+	return -1;
 }
 
 void alloc_block(arena_t *arena, const uint64_t address, const uint64_t size)
 {
 	list_t *list = arena->alloc_list;
-	if (address < 0 || address + size > arena->arena_size)
+	if (address >= arena->arena_size) {
+		printf("The allocated address is outside the size of arena\n");
 		return;
+	}
+	if (address + size > arena->arena_size) {
+		printf("The end address is past the size of the arena\n");
+		return;
+	}
 	if (list->size == 0) {
 		block_t *block = make_block(address, size);
 		dll_add_nth_node(list, 0, block);
@@ -455,17 +466,58 @@ void alloc_block(arena_t *arena, const uint64_t address, const uint64_t size)
 		dll_add_nth_node(list, n, block);
 		free(block);
 		combine_arena(arena);
+		return;
 	}
+	printf("This zone was already allocated.\n");
 }
 
 void read(arena_t *arena, uint64_t address, uint64_t size)
 {
-
+	position pos = get_addr_pos(arena, address);
+	if (pos.miniblock_pos == -1) {
+		printf("Invalid address for read.\n");
+		return;
+	}
+	list_t *block_list = arena->alloc_list;
+	node *cur1 = dll_get_nth_node(block_list, pos.block_pos);
+	block_t *block = (block_t *)cur1->data;
+	list_t *miniblock_list = (list_t *)block->miniblock_list;
+	node *cur2 = dll_get_nth_node(miniblock_list, pos.miniblock_pos);
+	miniblock_t *miniblock = (miniblock_t *)cur2->data;
+	if (size > miniblock->size) {
+		uint64_t read_bytes = miniblock->size;
+		printf("Warning: size was bigger than the block size. ");
+		printf("Reading %ld characters.\n", read_bytes);
+	}
+	// char *s = malloc(miniblock->size);
+	// memcpy(s, miniblock->rw_buffer, miniblock->size);
+	printf("%s\n", (char *)miniblock->rw_buffer);
+	// free(s);
 }
 
-void write(arena_t *arena, const uint64_t address, const uint64_t size, int8_t *data)
+void
+write(arena_t *arena, const uint64_t address, const uint64_t size, int8_t *data)
 {
-
+	position pos = get_addr_pos(arena, address);
+	if (pos.miniblock_pos == -1) {
+		printf("Invalid address for write.\n");
+		return;
+	}
+	list_t *block_list = arena->alloc_list;
+	node *cur1 = dll_get_nth_node(block_list, pos.block_pos);
+	block_t *block = (block_t *)cur1->data;
+	list_t *miniblock_list = (list_t *)block->miniblock_list;
+	node *cur2 = dll_get_nth_node(miniblock_list, pos.miniblock_pos);
+	miniblock_t *miniblock = (miniblock_t *)cur2->data;
+	if (size > miniblock->size) {
+		uint64_t written_bytes = miniblock->size;
+		printf("Warning: size was bigger than the block size. ");
+		printf("Writing %ld characters.\n", written_bytes);
+	}
+	free(miniblock->rw_buffer);
+	miniblock->rw_buffer = malloc(miniblock->size);
+	memcpy(miniblock->rw_buffer, data, miniblock->size);
+	free(data);
 }
 
 char *write_perm(uint8_t perm)
@@ -486,7 +538,7 @@ char *write_perm(uint8_t perm)
 	else
 		char_perm[2] = '-';
 	char_perm[3] = '\0';
-	
+
 	return char_perm;
 }
 
@@ -501,7 +553,8 @@ void print_block(block_t *block, int indx)
 		miniblock_t *miniblock = (miniblock_t *)cur->data;
 		uint64_t addr_fin = miniblock->start_address + miniblock->size;
 		char *char_perm = write_perm(miniblock->perm);
-		printf("Miniblock %d:\t\t0x%lX\t\t-\t\t0x%lX\t\t| %s\n", i + 1, miniblock->start_address, addr_fin, char_perm);
+		printf("Miniblock %d:\t\t0x%lX\t\t", i + 1, miniblock->start_address);
+		printf("-\t\t0x%lX\t\t| %s\n", addr_fin, char_perm);
 		free(char_perm);
 		cur = cur->next;
 	}
@@ -536,7 +589,7 @@ void pmap(const arena_t *arena)
 	}
 }
 
-void mprotect(arena_t *arena, uint64_t address, int8_t *permission)
-{
+// void mprotect(arena_t *arena, uint64_t address, int8_t *permission)
+// {
 
-}
+// }
