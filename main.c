@@ -38,6 +38,8 @@ int main(void)
 				s[i] = getc(stdin);
 				if (i == 0 && s[i] == ' ')
 					s[i] = getc(stdin);
+				if (s[i] == '\0')
+					s[i] = '\n';
 			}
 			write(arena, address, size, (uint8_t *)s);
 			continue;

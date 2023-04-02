@@ -557,7 +557,6 @@ write(arena_t *arena, const uint64_t address, const uint64_t size, int8_t *data)
 		}
 	} else {
 		position fin_pos = get_addr_pos(arena, address + size - 1);
-		// printf("%d\n", fin_pos.block_pos);
 		int m = fin_pos.miniblock_pos;
 		for (int i = n; i <= m; i++) {
 			miniblock = (miniblock_t *)cur2->data;
@@ -582,7 +581,6 @@ write(arena_t *arena, const uint64_t address, const uint64_t size, int8_t *data)
 	miniblock->rw_buffer = malloc(miniblock->size);
 	for (int i = 0; i < written_bytes; i++) {
 		if (k == miniblock->size) {
-			// ((char *)miniblock->rw_buffer)[k] = '\0';
 			k = 0;
 			n++;
 			cur2 = dll_get_nth_node(miniblock_list, n);
