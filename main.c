@@ -7,8 +7,10 @@ int main(void)
 	char com[100];
 	uint64_t size, address;
 	arena_t *arena;
-	char *s, c;
-	while (1) {
+	char *s;
+	char c, permission[50];
+	int j = 0;
+	while (j < 5000) {
 		scanf("%s", com);
 		if (strcmp(com, "ALLOC_ARENA") == 0) {
 			scanf("%ld", &size);
@@ -30,13 +32,12 @@ int main(void)
 			continue;
 		}
 		if (strcmp(com, "WRITE") == 0) {
-			scanf("%ld %ld ", &address, &size);
-			s = malloc(size * sizeof(char));
-			scanf("%c", &c);
+			scanf("%ld %ld", &address, &size);
+			s = malloc(size);
 			for (int i = 0; i < size; i++) {
-				scanf("%c", &s[i]);
-				if (s[i] == '\n')
-					i--;
+				s[i] = getc(stdin);
+				if (i == 0 && s[i] == ' ')
+					s[i] = getc(stdin);
 			}
 			write(arena, address, size, (uint8_t *)s);
 			continue;
@@ -50,7 +51,14 @@ int main(void)
 			dealloc_arena(arena);
 			break;
 		}
+		if (strcmp(com, "MPROTECT") == 0) {
+			scanf("%ld", &address);
+			fgets(permission, 50, stdin);
+			mprotect(arena, address, permission);
+			continue;
+		}
 		printf("Invalid command. Please try again.\n");
+		j++;
 		continue;
 	}
 	return 0;

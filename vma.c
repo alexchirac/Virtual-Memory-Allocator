@@ -474,25 +474,60 @@ void alloc_block(arena_t *arena, const uint64_t address, const uint64_t size)
 void read(arena_t *arena, uint64_t address, uint64_t size)
 {
 	position pos = get_addr_pos(arena, address);
+	uint64_t read_bytes;
 	if (pos.miniblock_pos == -1) {
 		printf("Invalid address for read.\n");
 		return;
 	}
 	list_t *block_list = arena->alloc_list;
-	node *cur1 = dll_get_nth_node(block_list, pos.block_pos);
+	node *cur1 = dll_get_nth_node(block_list, pos.block_pos), *cur2;
 	block_t *block = (block_t *)cur1->data;
 	list_t *miniblock_list = (list_t *)block->miniblock_list;
-	node *cur2 = dll_get_nth_node(miniblock_list, pos.miniblock_pos);
-	miniblock_t *miniblock = (miniblock_t *)cur2->data;
-	if (size > miniblock->size) {
-		uint64_t read_bytes = miniblock->size;
+	miniblock_t *miniblock;
+	int n = pos.miniblock_pos;
+	cur2 = dll_get_nth_node(miniblock_list, n);
+	if (address + size > block->size + block->start_address) {
+		for (int i = n; i < miniblock_list->size; i++) {
+			miniblock = (miniblock_t *)cur2->data;
+			if (miniblock->perm / 4 == 0) {
+				printf("Invalid permissions for read.\n");
+				return;
+			}
+			cur2 = cur2->next;
+		}
+	} else {
+		position fin_pos = get_addr_pos(arena, address + size - 1);
+		int m = fin_pos.miniblock_pos;
+		for (int i = n; i <= m; i++) {
+			miniblock = (miniblock_t *)cur2->data;
+			if (miniblock->perm / 4 == 0) {
+				printf("Invalid permissions for read.\n");
+				return;
+			}
+			cur2 = cur2->next;
+		}
+	}
+	if (address + size > block->size + block->start_address) {
+		read_bytes = block->size + block->start_address - address;
 		printf("Warning: size was bigger than the block size. ");
 		printf("Reading %ld characters.\n", read_bytes);
+	} else {
+		read_bytes = size;
 	}
-	// char *s = malloc(miniblock->size);
-	// memcpy(s, miniblock->rw_buffer, miniblock->size);
-	printf("%s\n", (char *)miniblock->rw_buffer);
-	// free(s);
+	miniblock = (miniblock_t *)cur2->data;
+	int k = address - miniblock->start_address;
+	for (int i = 0; i < read_bytes; i++) {
+		if (k == miniblock->size) {
+			k = 0;
+			n++;
+			cur2 = dll_get_nth_node(miniblock_list, n);
+			miniblock = (miniblock_t *)cur2->data;
+		}
+		char c = ((char *)miniblock->rw_buffer)[k];
+		printf("%c", c);
+		k++;
+	}
+	printf("\n");
 }
 
 void
@@ -504,20 +539,58 @@ write(arena_t *arena, const uint64_t address, const uint64_t size, int8_t *data)
 		return;
 	}
 	list_t *block_list = arena->alloc_list;
-	node *cur1 = dll_get_nth_node(block_list, pos.block_pos);
+	node *cur1 = dll_get_nth_node(block_list, pos.block_pos), *cur2;
 	block_t *block = (block_t *)cur1->data;
 	list_t *miniblock_list = (list_t *)block->miniblock_list;
-	node *cur2 = dll_get_nth_node(miniblock_list, pos.miniblock_pos);
-	miniblock_t *miniblock = (miniblock_t *)cur2->data;
-	if (size > miniblock->size) {
-		uint64_t written_bytes = miniblock->size;
+	uint64_t written_bytes;
+	miniblock_t *miniblock;
+	int n = pos.miniblock_pos;
+	cur2 = dll_get_nth_node(miniblock_list, n);
+	if (address + size > block->size + block->start_address) {
+		for (int i = n; i < miniblock_list->size; i++) {
+			miniblock = (miniblock_t *)cur2->data;
+			if (miniblock->perm % 4 / 2 == 0) {
+				printf("Invalid permissions for write.\n");
+				return;
+			}
+			cur2 = cur2->next;
+		}
+	} else {
+		position fin_pos = get_addr_pos(arena, address + size - 1);
+		// printf("%d\n", fin_pos.block_pos);
+		int m = fin_pos.miniblock_pos;
+		for (int i = n; i <= m; i++) {
+			miniblock = (miniblock_t *)cur2->data;
+			if (miniblock->perm % 4 / 2 == 0) {
+				printf("Invalid permissions for write.\n");
+				return;
+			}
+			cur2 = cur2->next;
+		}
+	}
+	if (address + size > block->size + block->start_address) {
+		written_bytes = block->size + block->start_address - address;
 		printf("Warning: size was bigger than the block size. ");
 		printf("Writing %ld characters.\n", written_bytes);
+	} else {
+		written_bytes = size;
 	}
+	cur2 = dll_get_nth_node(miniblock_list, n);
+	miniblock = (miniblock_t *)cur2->data;
 	free(miniblock->rw_buffer);
+	int k = address - miniblock->start_address;
 	miniblock->rw_buffer = malloc(miniblock->size);
-	memcpy(miniblock->rw_buffer, data, miniblock->size);
-	free(data);
+	for (int i = 0; i < written_bytes; i++) {
+		if (k == miniblock->size) {
+			// ((char *)miniblock->rw_buffer)[k] = '\0';
+			k = 0;
+			n++;
+			cur2 = dll_get_nth_node(miniblock_list, n);
+			miniblock = (miniblock_t *)cur2->data;
+		}
+		((uint8_t *)miniblock->rw_buffer)[k] = data[i];
+		k++;
+	}
 }
 
 char *write_perm(uint8_t perm)
@@ -589,7 +662,44 @@ void pmap(const arena_t *arena)
 	}
 }
 
-// void mprotect(arena_t *arena, uint64_t address, int8_t *permission)
-// {
+void mprotect(arena_t *arena, uint64_t address, int8_t *permission)
+{
+	position pos = get_addr_pos(arena, address);
+	if (pos.is_start == 0) {
+		printf("Invalid address for mprotect.\n");
+		return;
+	}
+	char p[7][11];
+	int nr = sscanf(permission, "%s %s %s %s %s %s %s",
+					p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
 
-// }
+	list_t *block_list = arena->alloc_list;
+	node *cur1 = dll_get_nth_node(block_list, pos.block_pos);
+	block_t *block = (block_t *)cur1->data;
+	list_t *miniblock_list = (list_t *)block->miniblock_list;
+	node *cur2 = dll_get_nth_node(miniblock_list, pos.miniblock_pos);
+	miniblock_t *miniblock = (miniblock_t *)cur2->data;
+	int perm_vector[4] = {0, 0, 0};
+	for (int i = 0; i < nr; i = i + 2) {
+		if (strncmp(p[i], "PROT_NONE", 9) == 0) {
+			perm_vector[0] = 0;
+			perm_vector[1] = 0;
+			perm_vector[2] = 0;
+			break;
+		}
+		if (strncmp(p[i], "PROT_READ", 9) == 0)
+			perm_vector[0] = 1;
+
+		if (strncmp(p[i], "PROT_WRITE", 10) == 0)
+			perm_vector[1] = 1;
+
+		if (strncmp(p[i], "PROT_EXEC", 9) == 0)
+			perm_vector[2] = 1;
+	}
+	int new_perm = 0, cnt = 1;
+	for (int i = 2; i >= 0; i--) {
+		new_perm = new_perm + perm_vector[i] * cnt;
+		cnt = cnt * 2;
+	}
+	miniblock->perm = new_perm;
+}
